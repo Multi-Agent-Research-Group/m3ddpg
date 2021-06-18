@@ -172,6 +172,10 @@ class CategoricalPd(Pd):
     def sample(self):
         u = tf.random_uniform(tf.shape(self.logits))
         return U.argmax(self.logits - tf.log(-tf.log(u)), axis=1)
+    def random_sample(self):
+        rand_logits = self.logits * (1+tf.random_normal(tf.shape(self.logits)))
+        u = tf.random_uniform(tf.shape(self.logits))
+        return U.argmax(rand_logits - tf.log(-tf.log(u)), axis=1)
     @classmethod
     def fromflat(cls, flat):
         return cls(flat)
@@ -205,6 +209,13 @@ class SoftCategoricalPd(Pd):
         rand_logits = self.logits - tf.log(-tf.log(u))
         # return rand_logits
         return U.softmax(rand_logits, axis=-1)
+    def random_sample(self):
+        rand_logits = self.logits * (1+tf.random_normal(tf.shape(self.logits)))
+        u = tf.random_uniform(tf.shape(self.logits))
+        rand_logits = rand_logits - tf.log(-tf.log(u))
+        # return rand_logits
+        return U.softmax(rand_logits, axis=-1)
+
     @classmethod
     def fromflat(cls, flat):
         return cls(flat)        
@@ -228,6 +239,8 @@ class MultiCategoricalPd(Pd):
         return tf.add_n([p.entropy() for p in self.categoricals])
     def sample(self):
         return self.low + tf.cast(tf.stack([p.sample() for p in self.categoricals], axis=-1), tf.int32)
+    def random_sample(self):
+        return self.low + tf.cast(tf.stack([p.random_sample() for p in self.categoricals], axis=-1), tf.int32)
     @classmethod
     def fromflat(cls, flat):
         return cls(flat)
@@ -257,6 +270,11 @@ class SoftMultiCategoricalPd(Pd):  # doesn't work yet
         for i in range(len(self.categoricals)):
             x.append(self.low[i] + self.categoricals[i].sample())
         return tf.concat(x, axis=-1)
+    def random_sample(self):
+        x = []
+        for i in range(len(self.categoricals)):
+            x.append(self.low[i] + self.categoricals[i].random_sample())
+        return tf.concat(x, axis=-1)
     @classmethod
     def fromflat(cls, flat):
         return cls(flat)
@@ -283,6 +301,10 @@ class DiagGaussianPd(Pd):
         return U.sum(self.logstd + .5 * np.log(2.0 * np.pi * np.e), 1)
     def sample(self):
         return self.mean + self.std * tf.random_normal(tf.shape(self.mean))
+    def random_sample(self):
+        rand_mean = self.mean * (1+tf.random_normal(tf.shape(self.mean)))
+        rand_std = self.std * (1+tf.random_normal(tf.shape(self.std)))
+        return rand_mean + rand_std * tf.random_normal(tf.shape(rand_mean))
     @classmethod
     def fromflat(cls, flat):
         return cls(flat)
@@ -303,6 +325,11 @@ class BernoulliPd(Pd):
         return U.sum(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=self.ps), axis=1)
     def sample(self):
         p = tf.sigmoid(self.logits)
+        u = tf.random_uniform(tf.shape(p))
+        return tf.to_float(math_ops.less(u, p))
+    def random_sample(self):
+        rand_logits = self.logits * (1+tf.random_normal(tf.shape(self.logits)))
+        p = tf.sigmoid(rand_logits)
         u = tf.random_uniform(tf.shape(p))
         return tf.to_float(math_ops.less(u, p))
     @classmethod
