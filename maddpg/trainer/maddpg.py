@@ -25,7 +25,7 @@ def make_update_exp(vals, target_vals):
     expression = tf.group(*expression)
     return U.function([], [], updates=[expression])
 
-def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, num_units=64, scope="trainer", reuse=None):
+def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, num_units=64, scope="trainer", reuse=None, average_perf_wt=0.0, num_samples=5):
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
@@ -73,6 +73,19 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
 
         loss = pg_loss + p_reg * 1e-3
 
+        if not local_q_func and average_perf_wt > 0.0:
+            new_q_inputs = []
+            for _ in range(num_samples):
+                new_act_n = [ tf.stop_gradient(act_pdtype_n[i].pdfromflat(p).random_sample()) if i != p_index
+                        else act_input_n[i] for i in range(len(act_input_n))]
+                new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
+                new_q_inputs.append(new_q_input)
+            new_q_inputs = tf.concat(new_q_inputs)
+            new_q = q_func(new_q_inputs, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
+            new_pg_loss = -tf.reduce_mean(new_q)
+
+            loss += average_perf_wt * new_pg_loss
+
         optimize_expr = U.minimize_and_clip(optimizer, loss, p_func_vars, grad_norm_clipping)
 
         # Create callable functions
@@ -90,7 +103,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
 
         return act, train, update_target_p, {'p_values': p_values, 'target_act': target_act}
 
-def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, scope="trainer", reuse=None, num_units=64):
+def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, scope="trainer", reuse=None, num_units=64, average_perf_wt=0.0, num_samples=5):
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
@@ -136,6 +149,18 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial,
                     else act_ph_n[i] for i in range(len(act_ph_n))]
             adv_q_input = tf.concat(obs_ph_n + new_act_n, 1)
             target_q = q_func(adv_q_input, 1, scope ='target_q_func', reuse=True, num_units=num_units)[:,0]
+        
+        if not local_q_func and average_perf_wt > 0.0:
+            new_target_q = []
+            for _ in range(num_samples):
+                new_act_n = [ act_pdtype_n[i].pdfromflat(p).random_sample() if i != p_index
+                        else act_input_n[i] for i in range(len(act_input_n))]
+                new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
+                new_q_inputs.append(new_q_input)
+            new_q_inputs = tf.concat(new_q_inputs)
+            new_q = q_func(new_q_inputs, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
+
+            target_q = tf.reduce_mean(tf.stack([new_q*average_perf_wt, target_q], axis=0), axis=0)
 
         target_q_func_vars = U.scope_vars(U.absolute_scope_name("target_q_func"))
         update_target_q = make_update_exp(q_func_vars, target_q_func_vars)
@@ -169,7 +194,9 @@ class MADDPGAgentTrainer(AgentTrainer):
             num_adversaries = args.num_adversaries,
             grad_norm_clipping=0.5,
             local_q_func=local_q_func,
-            num_units=args.num_units
+            num_units=args.num_units,
+            average_perf_wt=args.average_perf_wt,
+            num_samples=args.num_samples
         )
         self.act, self.p_train, self.p_update, self.p_debug = p_train(
             scope=self.scope,
@@ -185,7 +212,9 @@ class MADDPGAgentTrainer(AgentTrainer):
             num_adversaries = args.num_adversaries,
             grad_norm_clipping=0.5,
             local_q_func=local_q_func,
-            num_units=args.num_units
+            num_units=args.num_units,
+            average_perf_wt=args.average_perf_wt,
+            num_samples=args.num_samples
         )
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(1e6)
