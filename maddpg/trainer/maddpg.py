@@ -80,7 +80,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
                         else act_input_n[i] for i in range(len(act_input_n))]
                 new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
                 new_q_inputs.append(new_q_input)
-            new_q_inputs = tf.concat(new_q_inputs)
+            new_q_inputs = tf.concat(new_q_inputs, axis=0)
             new_q = q_func(new_q_inputs, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
             new_pg_loss = -tf.reduce_mean(new_q)
 
@@ -151,16 +151,16 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial,
             target_q = q_func(adv_q_input, 1, scope ='target_q_func', reuse=True, num_units=num_units)[:,0]
         
         if not local_q_func and average_perf_wt > 0.0:
-            new_target_q = []
+            new_q_inputs = []
             for _ in range(num_samples):
-                new_act_n = [ act_pdtype_n[i].pdfromflat(p).random_sample() if i != p_index
-                        else act_input_n[i] for i in range(len(act_input_n))]
+                new_act_n = [ tf.stop_gradient(act_ph_n[i]) if i != q_index
+                        else act_ph_n[i] for i in range(len(act_ph_n))]
                 new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
                 new_q_inputs.append(new_q_input)
-            new_q_inputs = tf.concat(new_q_inputs)
+            new_q_inputs = tf.concat(new_q_inputs, axis=0)
             new_q = q_func(new_q_inputs, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
-
-            target_q = tf.reduce_mean(tf.stack([new_q*average_perf_wt, target_q], axis=0), axis=0)
+            new_q = tf.reshape(new_q, [num_samples, -1])*average_perf_wt
+            target_q = tf.reduce_mean(tf.concat([new_q, target_q[None]], axis=0), axis=0)
 
         target_q_func_vars = U.scope_vars(U.absolute_scope_name("target_q_func"))
         update_target_q = make_update_exp(q_func_vars, target_q_func_vars)
