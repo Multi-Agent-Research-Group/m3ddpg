@@ -217,8 +217,8 @@ def train(arglist):
             # saves final episode reward for plotting training curve later
             if len(episode_rewards) > arglist.num_episodes:
                 suffix = '_test.pkl' if arglist.test else '.pkl'
-                rew_file_name = arglist.plots_dir + arglist.exp_name + '_rewards' + suffix
-                agrew_file_name = arglist.plots_dir + arglist.exp_name + '_agrewards' + suffix
+                rew_file_name = arglist.plots_dir + arglist.exp_name + '_rewards_{}'.format(arglist.seed) + suffix
+                agrew_file_name = arglist.plots_dir + arglist.exp_name + '_agrewards_{}'.format(arglist.seed) + suffix
 
                 if not os.path.exists(os.path.dirname(rew_file_name)):
                     try:
