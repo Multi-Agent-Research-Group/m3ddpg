@@ -84,7 +84,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
             new_q = q_func(new_q_inputs, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
             new_pg_loss = -tf.reduce_mean(new_q)
 
-            loss += average_perf_wt * new_pg_loss
+            loss = (1-average_perf_wt)*loss + average_perf_wt * new_pg_loss
 
         optimize_expr = U.minimize_and_clip(optimizer, loss, p_func_vars, grad_norm_clipping)
 
@@ -160,6 +160,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial,
             new_q_inputs = tf.concat(new_q_inputs, axis=0)
             new_q = q_func(new_q_inputs, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
             new_q = tf.reshape(new_q, [num_samples, -1])*average_perf_wt
+            target_q = target_q *(1-average_perf_wt)
             target_q = tf.reduce_mean(tf.concat([new_q, target_q[None]], axis=0), axis=0)
 
         target_q_func_vars = U.scope_vars(U.absolute_scope_name("target_q_func"))
