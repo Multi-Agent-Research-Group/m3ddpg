@@ -25,7 +25,7 @@ def make_update_exp(vals, target_vals):
     expression = tf.group(*expression)
     return U.function([], [], updates=[expression])
 
-def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, num_units=64, scope="trainer", reuse=None, average_perf_wt=0.0, num_samples=5):
+def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, num_units=64, scope="trainer", reuse=None, average_perf_wt=0.0, num_samples=5, scale=0.1):
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
@@ -76,7 +76,11 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
         if not local_q_func and average_perf_wt > 0.0:
             new_q_inputs = []
             for _ in range(num_samples):
-                new_act_n = [ tf.stop_gradient(act_pdtype_n[i].pdfromflat(p).random_sample()) if i != p_index
+                new_act_pd = act_pdtype_n[p_index].pdfromflat(p * (1+scale*tf.random.normal(p)))
+                raw_perturb = tf.gradients(pg_loss, act_input_n)
+                perturb = [tf.stop_gradient(tf.nn.l2_normalize(elem, axis = 1)) for elem in raw_perturb]
+                perturb = [perturb[i] * adv_rate[i] for i in range(num_agents)]
+                new_act_n = [perturb[i] + act_input_n[i] if i != p_index
                         else act_input_n[i] for i in range(len(act_input_n))]
                 new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
                 new_q_inputs.append(new_q_input)
@@ -103,7 +107,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
 
         return act, train, update_target_p, {'p_values': p_values, 'target_act': target_act}
 
-def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, scope="trainer", reuse=None, num_units=64, average_perf_wt=0.0, num_samples=5):
+def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, scope="trainer", reuse=None, num_units=64, average_perf_wt=0.0, num_samples=5, scale=0.1):
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
