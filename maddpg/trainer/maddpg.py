@@ -25,7 +25,7 @@ def make_update_exp(vals, target_vals):
     expression = tf.group(*expression)
     return U.function([], [], updates=[expression])
 
-def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, num_units=64, scope="trainer", reuse=None, average_perf_wt=0.0, num_samples=5):
+def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, num_units=64, scope="trainer", reuse=None, average_perf_wt=0.0, num_samples=5, k_minima=False):
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
@@ -69,11 +69,11 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
             
             adv_q_input = tf.concat(obs_ph_n + new_act_n, 1)
             adv_q = q_func(adv_q_input, 1, scope = "q_func", reuse=True, num_units=num_units)[:,0]
-            pg_loss = -tf.reduce_mean(q)
+            pg_loss = -tf.reduce_mean(adv_q)
 
         loss = pg_loss + p_reg * 1e-3
 
-        if not local_q_func and average_perf_wt > 0.0:
+        if not local_q_func and average_perf_wt > 0.0 and adversarial:
             new_q_inputs = []
             for _ in range(num_samples):
                 new_act_n = [ tf.stop_gradient(act_pdtype_n[i].pdfromflat(p).random_sample()) if i != p_index
@@ -84,7 +84,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
             new_q = q_func(new_q_inputs, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
             new_pg_loss = -tf.reduce_mean(new_q)
 
-            loss = (1-average_perf_wt)*loss + average_perf_wt * new_pg_loss
+            loss = (1-average_perf_wt)*pg_loss + average_perf_wt * new_pg_loss + p_reg * 1e-3
 
         optimize_expr = U.minimize_and_clip(optimizer, loss, p_func_vars, grad_norm_clipping)
 
@@ -103,7 +103,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
 
         return act, train, update_target_p, {'p_values': p_values, 'target_act': target_act}
 
-def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, scope="trainer", reuse=None, num_units=64, average_perf_wt=0.0, num_samples=5):
+def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial, adv_eps, adv_eps_s, num_adversaries, grad_norm_clipping=None, local_q_func=False, scope="trainer", reuse=None, num_units=64, average_perf_wt=0.0, num_samples=5, k_minima=False):
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
@@ -150,7 +150,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial,
             adv_q_input = tf.concat(obs_ph_n + new_act_n, 1)
             target_q = q_func(adv_q_input, 1, scope ='target_q_func', reuse=True, num_units=num_units)[:,0]
         
-        if not local_q_func and average_perf_wt > 0.0:
+        if not local_q_func and average_perf_wt > 0.0 and adversarial:
             new_q_inputs = []
             for _ in range(num_samples):
                 new_act_n = [ tf.stop_gradient(act_ph_n[i]) if i != q_index
@@ -160,8 +160,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial,
             new_q_inputs = tf.concat(new_q_inputs, axis=0)
             new_q = q_func(new_q_inputs, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
             new_q = tf.reshape(new_q, [num_samples, -1])*average_perf_wt
-            target_q = target_q *(1-average_perf_wt)
-            target_q = tf.reduce_mean(tf.concat([new_q, target_q[None]], axis=0), axis=0)
+            target_q = target_q *(1-average_perf_wt) + average_perf_wt * tf.reduce_mean(tf.concat([new_q, target_q[None]], axis=0), axis=0)
 
         target_q_func_vars = U.scope_vars(U.absolute_scope_name("target_q_func"))
         update_target_q = make_update_exp(q_func_vars, target_q_func_vars)

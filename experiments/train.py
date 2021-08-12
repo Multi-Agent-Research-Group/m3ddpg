@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument("--adv-eps", type=float, default=1e-3, help="adversarial training rate")
     parser.add_argument("--adv-eps-s", type=float, default=1e-5, help="small adversarial training rate")
     parser.add_argument("--average_perf_wt", type=float, default=0.0, help="weight multiplied to average performance q-value")
-    parser.add_argument("--num_samples", type=int, default=5, help="Num samples to collect to find average performance")
+    parser.add_argument("--num_samples", type=int, default=10, help="Num samples to collect to find average performance")
     # Checkpointing
     parser.add_argument("--exp-name", type=str, default=None, help="name of the experiment")
     parser.add_argument("--save-dir", type=str, default="/tmp/policy/", help="directory in which training state and model should be saved")
@@ -217,8 +217,8 @@ def train(arglist):
             # saves final episode reward for plotting training curve later
             if len(episode_rewards) > arglist.num_episodes:
                 suffix = '_test.pkl' if arglist.test else '.pkl'
-                rew_file_name = arglist.plots_dir + arglist.exp_name + '_rewards_{}'.format(arglist.seed) + suffix
-                agrew_file_name = arglist.plots_dir + arglist.exp_name + '_agrewards_{}'.format(arglist.seed) + suffix
+                rew_file_name = arglist.plots_dir + arglist.exp_name + '_rewards' + suffix
+                agrew_file_name = arglist.plots_dir + arglist.exp_name + '_agrewards' + suffix
 
                 if not os.path.exists(os.path.dirname(rew_file_name)):
                     try:
