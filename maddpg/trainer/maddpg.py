@@ -74,16 +74,35 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
         loss = pg_loss + p_reg * 1e-3
 
         if not local_q_func and average_perf_wt > 0.0 and adversarial:
-            new_q_inputs = []
-            for _ in range(num_samples):
-                new_act_n = [ tf.stop_gradient(act_pdtype_n[i].pdfromflat(p).random_sample()) if i != p_index
-                        else act_input_n[i] for i in range(len(act_input_n))]
-                new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
-                new_q_inputs.append(new_q_input)
-            new_q_inputs = tf.concat(new_q_inputs, axis=0)
+            if k_minima:
+                num_agents = len(act_input_n)
+                if p_index < num_adversaries:
+                    adv_rate = [adv_eps_s *(i < num_adversaries) + adv_eps * (i >= num_adversaries) for i in range(num_agents)]
+                else:
+                    adv_rate = [adv_eps_s *(i >= num_adversaries) + adv_eps * (i < num_adversaries) for i in range(num_agents)]
+                print("      adv rate for p_index : ", p_index, adv_rate)
+                raw_perturb = tf.gradients(pg_loss, act_input_n)
+                perturb = [tf.stop_gradient(tf.nn.l2_normalize(elem, axis = 1)) for elem in raw_perturb]
+                perturb = [perturb[i] * adv_rate[i] for i in range(num_agents)]
+
+                new_q_inputs = []
+                for _ in range(num_samples):
+                    new_act_n = [perturb[i] * tf.random.uniform(-0.1,0.1) + act_input_n[i] if i != p_index 
+                            else act_input_n[i] for i in range(len(act_input_n))]
+                    new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
+                    new_q_inputs.append(new_q_input)
+                new_q_inputs = tf.concat(new_q_inputs, axis=0)
+            else:
+                new_q_inputs = []
+                for _ in range(num_samples):
+                    new_act_n = [ tf.stop_gradient(act_pdtype_n[i].pdfromflat(p).random_sample()) if i != p_index
+                            else act_input_n[i] for i in range(len(act_input_n))]
+                    new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
+                    new_q_inputs.append(new_q_input)
+                new_q_inputs = tf.concat(new_q_inputs, axis=0)
+
             new_q = q_func(new_q_inputs, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
             new_pg_loss = -tf.reduce_mean(new_q)
-
             loss = (1-average_perf_wt)*pg_loss + average_perf_wt * new_pg_loss + p_reg * 1e-3
 
         optimize_expr = U.minimize_and_clip(optimizer, loss, p_func_vars, grad_norm_clipping)
@@ -152,11 +171,29 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial,
         
         if not local_q_func and average_perf_wt > 0.0 and adversarial:
             new_q_inputs = []
-            for _ in range(num_samples):
-                new_act_n = [ tf.stop_gradient(act_ph_n[i]) if i != q_index
+            if k_minima:
+                num_agents = len(act_ph_n)
+                if q_index < num_adversaries:
+                    adv_rate = [adv_eps_s *(i < num_adversaries) + adv_eps * (i >= num_adversaries) for i in range(num_agents)]
+                else:
+                    adv_rate = [adv_eps_s *(i >= num_adversaries) + adv_eps * (i < num_adversaries) for i in range(num_agents)]
+                print("      adv rate for q_index : ", q_index, adv_rate)
+
+                pg_loss = -tf.reduce_mean(target_q)
+                raw_perturb = tf.gradients(pg_loss, act_ph_n)
+                perturb = [adv_eps * tf.stop_gradient(tf.nn.l2_normalize(elem, axis = 1)) for elem in raw_perturb]
+
+                for _ in range(num_samples):
+                    new_act_n = [perturb[i] * tf.random.uniform(-0.1, 0.1) + act_ph_n[i] if i != q_index
                         else act_ph_n[i] for i in range(len(act_ph_n))]
-                new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
-                new_q_inputs.append(new_q_input)
+                    new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
+                    new_q_inputs.append(new_q_input)
+            else:
+                for _ in range(num_samples):
+                    new_act_n = [ tf.stop_gradient(act_ph_n[i]) if i != q_index
+                            else act_ph_n[i] for i in range(len(act_ph_n))]
+                    new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
+                    new_q_inputs.append(new_q_input)
             new_q_inputs = tf.concat(new_q_inputs, axis=0)
             new_q = q_func(new_q_inputs, 1, scope="q_func", reuse=True, num_units=num_units)[:,0]
             new_q = tf.reshape(new_q, [num_samples, -1])*average_perf_wt
@@ -196,7 +233,8 @@ class MADDPGAgentTrainer(AgentTrainer):
             local_q_func=local_q_func,
             num_units=args.num_units,
             average_perf_wt=args.average_perf_wt,
-            num_samples=args.num_samples
+            num_samples=args.num_samples,
+            k_minima=args.k_minima
         )
         self.act, self.p_train, self.p_update, self.p_debug = p_train(
             scope=self.scope,
@@ -214,7 +252,8 @@ class MADDPGAgentTrainer(AgentTrainer):
             local_q_func=local_q_func,
             num_units=args.num_units,
             average_perf_wt=args.average_perf_wt,
-            num_samples=args.num_samples
+            num_samples=args.num_samples,
+            k_minima=args.k_minima
         )
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(1e6)

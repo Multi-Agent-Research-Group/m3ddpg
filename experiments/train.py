@@ -31,7 +31,8 @@ def parse_args():
     parser.add_argument("--adv-eps", type=float, default=1e-3, help="adversarial training rate")
     parser.add_argument("--adv-eps-s", type=float, default=1e-5, help="small adversarial training rate")
     parser.add_argument("--average_perf_wt", type=float, default=0.0, help="weight multiplied to average performance q-value")
-    parser.add_argument("--num_samples", type=int, default=10, help="Num samples to collect to find average performance")
+    parser.add_argument("--num_samples", type=int, default=16, help="Num samples to collect to find average performance")
+    parser.add_argument("--k_minima", action="store_true", help="To use k-minimum samples or not")
     # Checkpointing
     parser.add_argument("--exp-name", type=str, default=None, help="name of the experiment")
     parser.add_argument("--save-dir", type=str, default="/tmp/policy/", help="directory in which training state and model should be saved")
