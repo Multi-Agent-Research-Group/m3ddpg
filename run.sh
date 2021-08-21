@@ -62,7 +62,7 @@ do
                     --adv-eps-s 0.001 \
                     --plots-dir results/$env/$gp-$bp-$sp-'k-min'/$seed/ \
                     --k_minima \
-                    --exp-name run &
+                    --exp-name run
 
                     echo " "
 

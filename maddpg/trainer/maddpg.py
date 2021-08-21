@@ -87,7 +87,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, adve
 
                 new_q_inputs = []
                 for _ in range(num_samples):
-                    new_act_n = [perturb[i] * tf.random.uniform(-0.1,0.1) + act_input_n[i] if i != p_index 
+                    new_act_n = [perturb[i] * tf.random_uniform((1,),-0.1,0.1) + act_input_n[i] if i != p_index 
                             else act_input_n[i] for i in range(len(act_input_n))]
                     new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
                     new_q_inputs.append(new_q_input)
@@ -184,7 +184,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, adversarial,
                 perturb = [adv_eps * tf.stop_gradient(tf.nn.l2_normalize(elem, axis = 1)) for elem in raw_perturb]
 
                 for _ in range(num_samples):
-                    new_act_n = [perturb[i] * tf.random.uniform(-0.1, 0.1) + act_ph_n[i] if i != q_index
+                    new_act_n = [perturb[i] * tf.random_uniform((1,), -0.1, 0.1) + act_ph_n[i] if i != q_index
                         else act_ph_n[i] for i in range(len(act_ph_n))]
                     new_q_input = tf.concat(obs_ph_n + new_act_n, 1)
                     new_q_inputs.append(new_q_input)
